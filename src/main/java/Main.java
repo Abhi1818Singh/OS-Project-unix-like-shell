@@ -6,7 +6,11 @@ public class Main {
     public static void main(String[] args) throws Exception {
         Scanner scanner = new Scanner(System.in);
 
-        Set<String> builtins = Set.of("echo", "exit", "type", "pwd");
+        Set<String> builtins = Set.of("echo", "exit", "type", "pwd", "cd");
+
+        // Track current directory ourselves since Java can't actually
+        // change the JVM's working directory after startup.
+        String currentDirectory = System.getProperty("user.dir");
 
         while (true) {
             System.out.print("$ ");
@@ -35,6 +39,31 @@ public class Main {
                 continue;
             }
 
+            // pwd builtin
+            if (command.equals("pwd")) {
+                System.out.println(currentDirectory);
+                continue;
+            }
+
+            // cd builtin
+            if (command.equals("cd")) {
+                if (parts.length < 2) {
+                    continue;
+                }
+
+                String targetPath = parts[1];
+
+                // This stage: only handle absolute paths
+                File targetDir = new File(targetPath);
+
+                if (targetDir.isAbsolute() && targetDir.isDirectory()) {
+                    currentDirectory = targetDir.getAbsolutePath();
+                } else {
+                    System.out.println("cd: " + targetPath + ": No such file or directory");
+                }
+                continue;
+            }
+
             // type builtin
             if (command.equals("type")) {
                 if (parts.length < 2) {
@@ -56,16 +85,11 @@ public class Main {
                 }
                 continue;
             }
-            // pwd builtin
-            if (command.equals("pwd")) {
-                System.out.println(System.getProperty("user.dir"));
-                continue;
-            }
 
             // Try to run as external program
             File executable = findExecutable(command);
             if (executable != null) {
-                runExternalProgram(parts);
+                runExternalProgram(parts, currentDirectory);
                 continue;
             }
 
@@ -74,6 +98,7 @@ public class Main {
         }
     }
 
+    // Searches PATH for the given command, returns the File if found & executable
     private static File findExecutable(String cmdToCheck) {
         String pathEnv = System.getenv("PATH");
 
@@ -94,11 +119,11 @@ public class Main {
         return null;
     }
 
-    private static void runExternalProgram(String[] parts) {
+    // Runs the external program, passing through stdin/stdout/stderr
+    private static void runExternalProgram(String[] parts, String currentDirectory) {
         try {
             ProcessBuilder pb = new ProcessBuilder(parts);
-            // Important: pass parts[0] as-is (not the absolute path) so
-            // the program sees its name the way the user typed it (argv[0])
+            pb.directory(new File(currentDirectory));
             pb.inheritIO();
             Process process = pb.start();
             process.waitFor();
