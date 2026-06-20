@@ -6,7 +6,7 @@ public class Main {
     public static void main(String[] args) throws Exception {
         Scanner scanner = new Scanner(System.in);
 
-        Set<String> builtins = Set.of("echo", "exit", "type");
+        Set<String> builtins = Set.of("echo", "exit", "type", "pwd");
 
         while (true) {
             System.out.print("$ ");
@@ -54,6 +54,11 @@ public class Main {
                 } else {
                     System.out.println(cmdToCheck + ": not found");
                 }
+                continue;
+            }
+            // pwd builtin
+            if (command.equals("pwd")) {
+                System.out.println(System.getProperty("user.dir"));
                 continue;
             }
 
