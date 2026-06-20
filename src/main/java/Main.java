@@ -8,7 +8,7 @@ import java.util.Set;
 
 public class Main {
 
-    // Tracks a background job for later use by the `jobs` builtin
+    // Tracks a background job for the `jobs` builtin
     static class Job {
         int jobNumber;
         long pid;
@@ -24,19 +24,6 @@ public class Main {
     }
 
     static List<Job> backgroundJobs = new ArrayList<>();
-
-    // Computes the next job number: one more than the highest current job
-    // number, or 1 if the table is empty. Numbers are recycled, not just
-    // incremented forever.
-    private static int computeNextJobNumber() {
-        int maxJobNumber = 0;
-        for (Job job : backgroundJobs) {
-            if (job.jobNumber > maxJobNumber) {
-                maxJobNumber = job.jobNumber;
-            }
-        }
-        return maxJobNumber + 1;
-    }
 
     public static void main(String[] args) throws Exception {
         Scanner scanner = new Scanner(System.in);
@@ -69,6 +56,24 @@ public class Main {
             }
 
             if (parts.isEmpty()) {
+                continue;
+            }
+
+            // Split into pipeline segments on "|"
+            List<List<String>> segments = new ArrayList<>();
+            List<String> currentSegment = new ArrayList<>();
+            for (String token : parts) {
+                if (token.equals("|")) {
+                    segments.add(currentSegment);
+                    currentSegment = new ArrayList<>();
+                } else {
+                    currentSegment.add(token);
+                }
+            }
+            segments.add(currentSegment);
+
+            if (segments.size() > 1) {
+                runPipeline(segments, currentDirectory, runInBackground);
                 continue;
             }
 
@@ -184,9 +189,9 @@ public class Main {
 
             // jobs builtin
             if (command.equals("jobs")) {
-                int size = backgroundJobs.size();
-                List<Job> toRemove = new ArrayList<>();
+                reapJobs();
 
+                int size = backgroundJobs.size();
                 for (int i = 0; i < size; i++) {
                     Job job = backgroundJobs.get(i);
 
@@ -199,25 +204,10 @@ public class Main {
                         marker = " ";
                     }
 
-                    boolean isDone = !job.process.isAlive();
-                    String status = isDone ? "Done" : "Running";
-                    String paddedStatus = String.format("%-24s", status);
+                    String paddedStatus = String.format("%-24s", "Running");
 
-                    // "Done" jobs print without the trailing "&"; "Running" jobs keep it.
-                    String displayCommand = job.commandLine;
-                    if (isDone && displayCommand.trim().endsWith("&")) {
-                        displayCommand = displayCommand.trim();
-                        displayCommand = displayCommand.substring(0, displayCommand.length() - 1).trim();
-                    }
-
-                    System.out.println("[" + job.jobNumber + "]" + marker + "  " + paddedStatus + displayCommand);
-
-                    if (isDone) {
-                        toRemove.add(job);
-                    }
+                    System.out.println("[" + job.jobNumber + "]" + marker + "  " + paddedStatus + job.commandLine);
                 }
-
-                backgroundJobs.removeAll(toRemove);
                 continue;
             }
 
@@ -290,6 +280,55 @@ public class Main {
         }
     }
 
+    // Checks all background jobs, prints a "Done" line for any that exited,
+    // and removes them from the job table. Used both by automatic
+    // pre-prompt reaping and by the `jobs` builtin.
+    private static void reapJobs() {
+        int size = backgroundJobs.size();
+        List<Job> toRemove = new ArrayList<>();
+
+        for (int i = 0; i < size; i++) {
+            Job job = backgroundJobs.get(i);
+
+            if (!job.process.isAlive()) {
+                String marker;
+                if (i == size - 1) {
+                    marker = "+";
+                } else if (i == size - 2) {
+                    marker = "-";
+                } else {
+                    marker = " ";
+                }
+
+                String paddedStatus = String.format("%-24s", "Done");
+
+                String displayCommand = job.commandLine.trim();
+                if (displayCommand.endsWith("&")) {
+                    displayCommand = displayCommand.substring(0, displayCommand.length() - 1).trim();
+                }
+
+                System.out.println("[" + job.jobNumber + "]" + marker + "  " + paddedStatus + displayCommand);
+
+                toRemove.add(job);
+            }
+        }
+
+        backgroundJobs.removeAll(toRemove);
+    }
+
+    // Computes the next job number: one more than the highest current job
+    // number, or 1 if the table is empty. Numbers are recycled, not just
+    // incremented forever.
+    private static int computeNextJobNumber() {
+        int maxJobNumber = 0;
+        for (Job job : backgroundJobs) {
+            if (job.jobNumber > maxJobNumber) {
+                maxJobNumber = job.jobNumber;
+            }
+        }
+        return maxJobNumber + 1;
+    }
+
     // Parses a raw input line into a list of arguments, honoring quotes and
     // backslash escaping.
     private static List<String> parseInput(String input) {
@@ -350,6 +389,13 @@ public class Main {
                         hasToken = false;
                     }
                     result.add("&");
+                } else if (c == '|') {
+                    if (hasToken) {
+                        result.add(current.toString());
+                        current.setLength(0);
+                        hasToken = false;
+                    }
+                    result.add("|");
                 } else if (c == ' ' || c == '\t') {
                     if (hasToken) {
                         result.add(current.toString());
@@ -370,10 +416,13 @@ public class Main {
         return result;
     }
 
+    // Inside double quotes, backslash only has special meaning before these
+    // characters.
     private static boolean isEscapableInDoubleQuotes(char c) {
         return c == '"' || c == '\\' || c == '$' || c == '`' || c == '\n';
     }
 
+    // Searches PATH for the given command, returns the File if found & executable
     private static File findExecutable(String cmdToCheck) {
         String pathEnv = System.getenv("PATH");
 
@@ -408,6 +457,7 @@ public class Main {
         }
     }
 
+    // Runs the external program in the background, without waiting.
     private static void runExternalProgramBackground(List<String> parts, String currentDirectory,
             String stdoutRedirectFile, boolean stdoutAppend,
             String stderrRedirectFile, boolean stderrAppend, String commandLine) {
@@ -423,6 +473,104 @@ public class Main {
             System.out.println("[" + jobNumber + "] " + pid);
         } catch (Exception e) {
             System.out.println(parts.get(0) + ": command not found");
+        }
+    }
+
+    // Runs a pipeline of two or more external commands, connecting each
+    // process's stdout to the next process's stdin.
+    private static void runPipeline(List<List<String>> segments, String currentDirectory, boolean runInBackground) {
+        try {
+            List<ProcessBuilder> builders = new ArrayList<>();
+
+            for (List<String> segment : segments) {
+                // Extract this segment's own redirection
+                String stdoutRedirectFile = null;
+                String stderrRedirectFile = null;
+                boolean stdoutAppend = false;
+                boolean stderrAppend = false;
+                List<String> cleanSegment = new ArrayList<>();
+
+                for (int i = 0; i < segment.size(); i++) {
+                    String token = segment.get(i);
+
+                    boolean isStdoutTrunc = token.equals(">");
+                    boolean isStdoutAppendOp = token.equals(">>");
+                    boolean isStdoutFdTrunc = token.equals("1") && i + 1 < segment.size()
+                            && segment.get(i + 1).equals(">");
+                    boolean isStdoutFdAppend = token.equals("1") && i + 1 < segment.size()
+                            && segment.get(i + 1).equals(">>");
+                    boolean isStderrFdTrunc = token.equals("2") && i + 1 < segment.size()
+                            && segment.get(i + 1).equals(">");
+                    boolean isStderrFdAppend = token.equals("2") && i + 1 < segment.size()
+                            && segment.get(i + 1).equals(">>");
+
+                    if (isStdoutTrunc) {
+                        if (i + 1 < segment.size()) {
+                            stdoutRedirectFile = segment.get(i + 1);
+                            stdoutAppend = false;
+                            i++;
+                        }
+                    } else if (isStdoutAppendOp) {
+                        if (i + 1 < segment.size()) {
+                            stdoutRedirectFile = segment.get(i + 1);
+                            stdoutAppend = true;
+                            i++;
+                        }
+                    } else if (isStdoutFdTrunc) {
+                        i++;
+                        if (i + 1 < segment.size()) {
+                            stdoutRedirectFile = segment.get(i + 1);
+                            stdoutAppend = false;
+                            i++;
+                        }
+                    } else if (isStdoutFdAppend) {
+                        i++;
+                        if (i + 1 < segment.size()) {
+                            stdoutRedirectFile = segment.get(i + 1);
+                            stdoutAppend = true;
+                            i++;
+                        }
+                    } else if (isStderrFdTrunc) {
+                        i++;
+                        if (i + 1 < segment.size()) {
+                            stderrRedirectFile = segment.get(i + 1);
+                            stderrAppend = false;
+                            i++;
+                        }
+                    } else if (isStderrFdAppend) {
+                        i++;
+                        if (i + 1 < segment.size()) {
+                            stderrRedirectFile = segment.get(i + 1);
+                            stderrAppend = true;
+                            i++;
+                        }
+                    } else {
+                        cleanSegment.add(token);
+                    }
+                }
+
+                if (cleanSegment.isEmpty()) {
+                    continue;
+                }
+
+                ProcessBuilder pb = buildProcessBuilder(cleanSegment, currentDirectory,
+                        stdoutRedirectFile, stdoutAppend, stderrRedirectFile, stderrAppend);
+                builders.add(pb);
+            }
+
+            if (builders.isEmpty()) {
+                return;
+            }
+
+            List<Process> processes = ProcessBuilder.startPipeline(builders);
+
+            if (!runInBackground) {
+                for (Process p : processes) {
+                    p.waitFor();
+                }
+            }
+        } catch (Exception e) {
+            System.out.println("pipeline: error executing command");
         }
     }
 
@@ -451,41 +599,5 @@ public class Main {
         pb.redirectInput(ProcessBuilder.Redirect.INHERIT);
 
         return pb;
-    }
-
-    // Checks all background jobs, prints a "Done" line for any that exited,
-    // and removes them from the job table. Used both by automatic
-    // pre-prompt reaping and by the `jobs` builtin.
-    private static void reapJobs() {
-        int size = backgroundJobs.size();
-        List<Job> toRemove = new ArrayList<>();
-
-        for (int i = 0; i < size; i++) {
-            Job job = backgroundJobs.get(i);
-
-            if (!job.process.isAlive()) {
-                String marker;
-                if (i == size - 1) {
-                    marker = "+";
-                } else if (i == size - 2) {
-                    marker = "-";
-                } else {
-                    marker = " ";
-                }
-
-                String paddedStatus = String.format("%-24s", "Done");
-
-                String displayCommand = job.commandLine.trim();
-                if (displayCommand.endsWith("&")) {
-                    displayCommand = displayCommand.substring(0, displayCommand.length() - 1).trim();
-                }
-
-                System.out.println("[" + job.jobNumber + "]" + marker + "  " + paddedStatus + displayCommand);
-
-                toRemove.add(job);
-            }
-        }
-
-        backgroundJobs.removeAll(toRemove);
     }
 }
