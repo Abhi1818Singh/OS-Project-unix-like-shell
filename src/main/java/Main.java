@@ -171,8 +171,19 @@ public class Main {
 
             // jobs builtin
             if (command.equals("jobs")) {
-                for (Job job : backgroundJobs) {
-                    String marker = (job == backgroundJobs.get(backgroundJobs.size() - 1)) ? "+" : "-";
+                int size = backgroundJobs.size();
+                for (int i = 0; i < size; i++) {
+                    Job job = backgroundJobs.get(i);
+
+                    String marker;
+                    if (i == size - 1) {
+                        marker = "+";
+                    } else if (i == size - 2) {
+                        marker = "-";
+                    } else {
+                        marker = " ";
+                    }
+
                     String status = "Running";
                     String paddedStatus = String.format("%-24s", status);
 
