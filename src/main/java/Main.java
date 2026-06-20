@@ -138,7 +138,7 @@ public class Main {
                     inDoubleQuotes = false;
                 } else if (c == '\\' && i + 1 < input.length()
                         && isEscapableInDoubleQuotes(input.charAt(i + 1))) {
-                    i++; // consume the backslash, keep only the escaped char
+                    i++;
                     current.append(input.charAt(i));
                 } else {
                     current.append(c);
@@ -156,6 +156,13 @@ public class Main {
                 } else if (c == '"') {
                     inDoubleQuotes = true;
                     hasToken = true;
+                } else if (c == '>') {
+                    if (hasToken) {
+                        result.add(current.toString());
+                        current.setLength(0);
+                        hasToken = false;
+                    }
+                    result.add(">");
                 } else if (c == ' ' || c == '\t') {
                     if (hasToken) {
                         result.add(current.toString());
