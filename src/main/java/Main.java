@@ -115,8 +115,8 @@ public class Main {
         }
     }
 
-    // Parses a raw input line into a list of arguments, honoring single and double
-    // quotes.
+    // Parses a raw input line into a list of arguments, honoring single/double
+    // quotes and backslash escaping.
     private static List<String> parseInput(String input) {
         List<String> result = new ArrayList<>();
         StringBuilder current = new StringBuilder();
@@ -140,7 +140,14 @@ public class Main {
                     current.append(c);
                 }
             } else {
-                if (c == '\'') {
+                if (c == '\\') {
+                    if (i + 1 < input.length()) {
+                        i++; // consume the next character literally
+                        current.append(input.charAt(i));
+                        hasToken = true;
+                    }
+                    // trailing lone backslash at end of input: just drop it
+                } else if (c == '\'') {
                     inSingleQuotes = true;
                     hasToken = true;
                 } else if (c == '"') {
