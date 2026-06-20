@@ -3,28 +3,6 @@ import java.util.Scanner;
 import java.util.Set;
 
 public class Main {
-
-
-    private static String findExecutable(String command) {
-        String pathEnv = System.getenv("PATH");
-
-        if (pathEnv == null) {
-            return null;
-        }
-
-        String[] directories = pathEnv.split(File.pathSeparator);
-
-        for (String dir : directories) {
-            File file = new File(dir, command);
-
-            if (file.exists() && file.isFile() && file.canExecute()) {
-                return file.getAbsolutePath();
-            }
-        }
-
-        return null;
-    }
-
     public static void main(String[] args) throws Exception {
         Scanner scanner = new Scanner(System.in);
 
@@ -42,12 +20,12 @@ public class Main {
             String[] parts = input.split(" ");
             String command = parts[0];
 
-            // exit
+            // exit builtin
             if (command.equals("exit")) {
                 System.exit(0);
             }
 
-            // echo
+            // echo builtin
             if (command.equals("echo")) {
                 if (input.length() > 5) {
                     System.out.println(input.substring(5));
@@ -57,7 +35,7 @@ public class Main {
                 continue;
             }
 
-            // type
+            // type builtin
             if (command.equals("type")) {
                 if (parts.length < 2) {
                     continue;
@@ -70,31 +48,57 @@ public class Main {
                     continue;
                 }
 
-                String executablePath = findExecutable(cmdToCheck);
-
-                if (executablePath != null) {
-                    System.out.println(cmdToCheck + " is " + executablePath);
+                File executable = findExecutable(cmdToCheck);
+                if (executable != null) {
+                    System.out.println(cmdToCheck + " is " + executable.getAbsolutePath());
                 } else {
                     System.out.println(cmdToCheck + ": not found");
                 }
-
                 continue;
             }
 
-            // external command
-            String executablePath = findExecutable(command);
-
-            if (executablePath != null) {
-                parts[0] = executablePath;
-
-                ProcessBuilder pb = new ProcessBuilder(parts);
-                pb.inheritIO();
-
-                Process process = pb.start();
-                process.waitFor();
-            } else {
-                System.out.println(command + ": command not found");
+            // Try to run as external program
+            File executable = findExecutable(command);
+            if (executable != null) {
+                runExternalProgram(parts);
+                continue;
             }
+
+            // Unknown command
+            System.out.println(command + ": command not found");
+        }
+    }
+
+    private static File findExecutable(String cmdToCheck) {
+        String pathEnv = System.getenv("PATH");
+
+        if (pathEnv == null) {
+            return null;
+        }
+
+        String[] directories = pathEnv.split(File.pathSeparator);
+
+        for (String dir : directories) {
+            File file = new File(dir, cmdToCheck);
+
+            if (file.exists() && file.isFile() && file.canExecute()) {
+                return file;
+            }
+        }
+
+        return null;
+    }
+
+    private static void runExternalProgram(String[] parts) {
+        try {
+            ProcessBuilder pb = new ProcessBuilder(parts);
+            // Important: pass parts[0] as-is (not the absolute path) so
+            // the program sees its name the way the user typed it (argv[0])
+            pb.inheritIO();
+            Process process = pb.start();
+            process.waitFor();
+        } catch (Exception e) {
+            System.out.println(parts[0] + ": command not found");
         }
     }
 }
