@@ -115,14 +115,14 @@ public class Main {
         }
     }
 
-    // Parses a raw input line into a list of arguments, honoring single/double
-    // quotes and backslash escaping.
+    // Parses a raw input line into a list of arguments, honoring quotes and
+    // backslash escaping.
     private static List<String> parseInput(String input) {
         List<String> result = new ArrayList<>();
         StringBuilder current = new StringBuilder();
         boolean inSingleQuotes = false;
         boolean inDoubleQuotes = false;
-        boolean hasToken = false; // tracks whether we've started building a token (handles '' or "" empty case)
+        boolean hasToken = false;
 
         for (int i = 0; i < input.length(); i++) {
             char c = input.charAt(i);
@@ -136,17 +136,20 @@ public class Main {
             } else if (inDoubleQuotes) {
                 if (c == '"') {
                     inDoubleQuotes = false;
+                } else if (c == '\\' && i + 1 < input.length()
+                        && isEscapableInDoubleQuotes(input.charAt(i + 1))) {
+                    i++; // consume the backslash, keep only the escaped char
+                    current.append(input.charAt(i));
                 } else {
                     current.append(c);
                 }
             } else {
                 if (c == '\\') {
                     if (i + 1 < input.length()) {
-                        i++; // consume the next character literally
+                        i++;
                         current.append(input.charAt(i));
                         hasToken = true;
                     }
-                    // trailing lone backslash at end of input: just drop it
                 } else if (c == '\'') {
                     inSingleQuotes = true;
                     hasToken = true;
@@ -171,6 +174,12 @@ public class Main {
         }
 
         return result;
+    }
+
+    // Inside double quotes, backslash only has special meaning before these
+    // characters.
+    private static boolean isEscapableInDoubleQuotes(char c) {
+        return c == '"' || c == '\\' || c == '$' || c == '`' || c == '\n';
     }
 
     // Searches PATH for the given command, returns the File if found & executable
