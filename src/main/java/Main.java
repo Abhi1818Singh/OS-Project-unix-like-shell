@@ -10,7 +10,7 @@ public class Main {
     public static void main(String[] args) throws Exception {
         Scanner scanner = new Scanner(System.in);
 
-        Set<String> builtins = Set.of("echo", "exit", "type", "pwd", "cd");
+        Set<String> builtins = Set.of("echo", "exit", "type", "pwd", "cd", "jobs");
 
         String currentDirectory = System.getProperty("user.dir");
 
@@ -138,6 +138,11 @@ public class Main {
             // pwd builtin
             if (command.equals("pwd")) {
                 System.out.println(currentDirectory);
+                continue;
+            }
+
+            // jobs builtin (empty implementation for now)
+            if (command.equals("jobs")) {
                 continue;
             }
 
