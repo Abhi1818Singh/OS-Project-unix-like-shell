@@ -53,6 +53,11 @@ public class Main {
 
                 String targetPath = parts[1];
 
+                // Expand ~ to HOME directory
+                if (targetPath.equals("~")) {
+                    targetPath = System.getenv("HOME");
+                }
+
                 File targetDir;
                 if (targetPath.startsWith("/")) {
                     // Absolute path
