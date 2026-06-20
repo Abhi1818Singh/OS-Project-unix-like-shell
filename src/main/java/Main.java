@@ -29,33 +29,61 @@ public class Main {
                 continue;
             }
 
-            // Extract output/error redirection (>, 1>, 2>) before dispatching the command
+            // Extract output/error redirection (>, >>, 1>, 1>>, 2>, 2>>) before dispatching
             String stdoutRedirectFile = null;
             String stderrRedirectFile = null;
+            boolean stdoutAppend = false;
+            boolean stderrAppend = false;
             List<String> cleanParts = new ArrayList<>();
 
             for (int i = 0; i < parts.size(); i++) {
                 String token = parts.get(i);
 
-                boolean isStdoutRedirect = token.equals(">");
-                boolean isStdoutFdRedirect = token.equals("1") && i + 1 < parts.size() && parts.get(i + 1).equals(">");
-                boolean isStderrFdRedirect = token.equals("2") && i + 1 < parts.size() && parts.get(i + 1).equals(">");
+                boolean isStdoutTrunc = token.equals(">");
+                boolean isStdoutAppendOp = token.equals(">>");
+                boolean isStdoutFdTrunc = token.equals("1") && i + 1 < parts.size() && parts.get(i + 1).equals(">");
+                boolean isStdoutFdAppend = token.equals("1") && i + 1 < parts.size() && parts.get(i + 1).equals(">>");
+                boolean isStderrFdTrunc = token.equals("2") && i + 1 < parts.size() && parts.get(i + 1).equals(">");
+                boolean isStderrFdAppend = token.equals("2") && i + 1 < parts.size() && parts.get(i + 1).equals(">>");
 
-                if (isStdoutRedirect) {
+                if (isStdoutTrunc) {
                     if (i + 1 < parts.size()) {
                         stdoutRedirectFile = parts.get(i + 1);
+                        stdoutAppend = false;
                         i++;
                     }
-                } else if (isStdoutFdRedirect) {
-                    i++; // skip the ">"
+                } else if (isStdoutAppendOp) {
                     if (i + 1 < parts.size()) {
                         stdoutRedirectFile = parts.get(i + 1);
+                        stdoutAppend = true;
                         i++;
                     }
-                } else if (isStderrFdRedirect) {
-                    i++; // skip the ">"
+                } else if (isStdoutFdTrunc) {
+                    i++; // skip ">"
+                    if (i + 1 < parts.size()) {
+                        stdoutRedirectFile = parts.get(i + 1);
+                        stdoutAppend = false;
+                        i++;
+                    }
+                } else if (isStdoutFdAppend) {
+                    i++; // skip ">>"
+                    if (i + 1 < parts.size()) {
+                        stdoutRedirectFile = parts.get(i + 1);
+                        stdoutAppend = true;
+                        i++;
+                    }
+                } else if (isStderrFdTrunc) {
+                    i++; // skip ">"
                     if (i + 1 < parts.size()) {
                         stderrRedirectFile = parts.get(i + 1);
+                        stderrAppend = false;
+                        i++;
+                    }
+                } else if (isStderrFdAppend) {
+                    i++; // skip ">>"
+                    if (i + 1 < parts.size()) {
+                        stderrRedirectFile = parts.get(i + 1);
+                        stderrAppend = true;
                         i++;
                     }
                 } else {
@@ -85,18 +113,18 @@ public class Main {
                     sb.append(parts.get(i));
                 }
 
-                // Even though echo never writes to stderr, a 2> redirect must still
-                // create/truncate the target file (matches real shell behavior).
+                // Even though echo never writes to stderr, a 2> / 2>> redirect must
+                // still create the target file (matches real shell behavior).
                 if (stderrRedirectFile != null) {
                     try {
-                        new FileOutputStream(stderrRedirectFile).close();
+                        new FileOutputStream(stderrRedirectFile, stderrAppend).close();
                     } catch (Exception e) {
                         System.out.println("echo: " + stderrRedirectFile + ": No such file or directory");
                     }
                 }
 
                 if (stdoutRedirectFile != null) {
-                    try (PrintStream out = new PrintStream(new FileOutputStream(stdoutRedirectFile))) {
+                    try (PrintStream out = new PrintStream(new FileOutputStream(stdoutRedirectFile, stdoutAppend))) {
                         out.println(sb.toString());
                     } catch (Exception e) {
                         System.out.println("echo: " + stdoutRedirectFile + ": No such file or directory");
@@ -167,7 +195,8 @@ public class Main {
             // Try to run as external program
             File executable = findExecutable(command);
             if (executable != null) {
-                runExternalProgram(parts, currentDirectory, stdoutRedirectFile, stderrRedirectFile);
+                runExternalProgram(parts, currentDirectory,
+                        stdoutRedirectFile, stdoutAppend, stderrRedirectFile, stderrAppend);
                 continue;
             }
 
@@ -223,7 +252,12 @@ public class Main {
                         current.setLength(0);
                         hasToken = false;
                     }
-                    result.add(">");
+                    if (i + 1 < input.length() && input.charAt(i + 1) == '>') {
+                        result.add(">>");
+                        i++; // consume the second '>'
+                    } else {
+                        result.add(">");
+                    }
                 } else if (c == ' ' || c == '\t') {
                     if (hasToken) {
                         result.add(current.toString());
@@ -273,19 +307,24 @@ public class Main {
 
     // Runs the external program, passing through stdin/stdout/stderr
     private static void runExternalProgram(List<String> parts, String currentDirectory,
-            String stdoutRedirectFile, String stderrRedirectFile) {
+            String stdoutRedirectFile, boolean stdoutAppend,
+            String stderrRedirectFile, boolean stderrAppend) {
         try {
             ProcessBuilder pb = new ProcessBuilder(parts);
             pb.directory(new File(currentDirectory));
 
             if (stdoutRedirectFile != null) {
-                pb.redirectOutput(new File(stdoutRedirectFile));
+                pb.redirectOutput(stdoutAppend
+                        ? ProcessBuilder.Redirect.appendTo(new File(stdoutRedirectFile))
+                        : ProcessBuilder.Redirect.to(new File(stdoutRedirectFile)));
             } else {
                 pb.redirectOutput(ProcessBuilder.Redirect.INHERIT);
             }
 
             if (stderrRedirectFile != null) {
-                pb.redirectError(new File(stderrRedirectFile));
+                pb.redirectError(stderrAppend
+                        ? ProcessBuilder.Redirect.appendTo(new File(stderrRedirectFile))
+                        : ProcessBuilder.Redirect.to(new File(stderrRedirectFile)));
             } else {
                 pb.redirectError(ProcessBuilder.Redirect.INHERIT);
             }
