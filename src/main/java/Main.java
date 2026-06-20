@@ -1,4 +1,6 @@
 import java.io.File;
+import java.io.FileOutputStream;
+import java.io.PrintStream;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Scanner;
@@ -27,6 +29,38 @@ public class Main {
                 continue;
             }
 
+            // Extract output redirection (> or 1>) before dispatching the command
+            String stdoutRedirectFile = null;
+            List<String> cleanParts = new ArrayList<>();
+
+            for (int i = 0; i < parts.size(); i++) {
+                String token = parts.get(i);
+
+                boolean isRedirect = token.equals(">");
+                boolean isFdRedirect = token.equals("1") && i + 1 < parts.size() && parts.get(i + 1).equals(">");
+
+                if (isRedirect) {
+                    if (i + 1 < parts.size()) {
+                        stdoutRedirectFile = parts.get(i + 1);
+                        i++;
+                    }
+                } else if (isFdRedirect) {
+                    i++; // skip the ">"
+                    if (i + 1 < parts.size()) {
+                        stdoutRedirectFile = parts.get(i + 1);
+                        i++;
+                    }
+                } else {
+                    cleanParts.add(token);
+                }
+            }
+
+            parts = cleanParts;
+
+            if (parts.isEmpty()) {
+                continue;
+            }
+
             String command = parts.get(0);
 
             // exit builtin
@@ -42,7 +76,16 @@ public class Main {
                         sb.append(" ");
                     sb.append(parts.get(i));
                 }
-                System.out.println(sb.toString());
+
+                if (stdoutRedirectFile != null) {
+                    try (PrintStream out = new PrintStream(new FileOutputStream(stdoutRedirectFile))) {
+                        out.println(sb.toString());
+                    } catch (Exception e) {
+                        System.out.println("echo: " + stdoutRedirectFile + ": No such file or directory");
+                    }
+                } else {
+                    System.out.println(sb.toString());
+                }
                 continue;
             }
 
@@ -106,7 +149,7 @@ public class Main {
             // Try to run as external program
             File executable = findExecutable(command);
             if (executable != null) {
-                runExternalProgram(parts, currentDirectory);
+                runExternalProgram(parts, currentDirectory, stdoutRedirectFile);
                 continue;
             }
 
@@ -211,11 +254,19 @@ public class Main {
     }
 
     // Runs the external program, passing through stdin/stdout/stderr
-    private static void runExternalProgram(List<String> parts, String currentDirectory) {
+    private static void runExternalProgram(List<String> parts, String currentDirectory, String stdoutRedirectFile) {
         try {
             ProcessBuilder pb = new ProcessBuilder(parts);
             pb.directory(new File(currentDirectory));
-            pb.inheritIO();
+
+            if (stdoutRedirectFile != null) {
+                pb.redirectOutput(new File(stdoutRedirectFile));
+                pb.redirectError(ProcessBuilder.Redirect.INHERIT);
+                pb.redirectInput(ProcessBuilder.Redirect.INHERIT);
+            } else {
+                pb.inheritIO();
+            }
+
             Process process = pb.start();
             process.waitFor();
         } catch (Exception e) {
