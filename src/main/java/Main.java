@@ -1,3 +1,4 @@
+import java.io.File;
 import java.util.Scanner;
 import java.util.Set;
 
@@ -36,20 +37,48 @@ public class Main {
 
             // type builtin
             if (command.equals("type")) {
-                if (parts.length > 1) {
-                    String cmdToCheck = parts[1];
+                if (parts.length < 2) {
+                    continue;
+                }
 
-                    if (builtins.contains(cmdToCheck)) {
-                        System.out.println(cmdToCheck + " is a shell builtin");
-                    } else {
-                        System.out.println(cmdToCheck + ": not found");
+                String cmdToCheck = parts[1];
+
+                // Check builtins first
+                if (builtins.contains(cmdToCheck)) {
+                    System.out.println(cmdToCheck + " is a shell builtin");
+                    continue;
+                }
+
+                // Search PATH
+                String pathEnv = System.getenv("PATH");
+
+                if (pathEnv != null) {
+                    String[] directories = pathEnv.split(File.pathSeparator);
+
+                    boolean found = false;
+
+                    for (String dir : directories) {
+                        File file = new File(dir, cmdToCheck);
+
+                        if (file.exists() && file.isFile() && file.canExecute()) {
+                            System.out.println(cmdToCheck + " is " + file.getAbsolutePath());
+                            found = true;
+                            break;
+                        }
+                    }
+
+                    if (found) {
+                        continue;
                     }
                 }
+
+                System.out.println(cmdToCheck + ": not found");
                 continue;
             }
 
-            // unknown command
+            // Unknown command
             System.out.println(command + ": command not found");
+        
         }
     }
 }
