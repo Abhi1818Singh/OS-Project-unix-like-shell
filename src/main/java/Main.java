@@ -5,6 +5,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Scanner;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
 
 public class Main {
 
@@ -24,6 +25,26 @@ public class Main {
     }
 
     static List<Job> backgroundJobs = new ArrayList<>();
+
+    // Checks whether a background process is still alive, giving it a brief
+    // grace period to actually exit if it's in the process of doing so. This
+    // matters for FIFO-backed processes (e.g. `cat fifo &`): when the writer
+    // truncates/closes the FIFO, the reader doesn't receive EOF and exit
+    // instantaneously - there's a small OS-level delay. A bare isAlive()
+    // check can catch the process a few milliseconds too early and report
+    // "Running" when it's actually about to exit. waitFor(timeout) lets the
+    // JVM briefly block to observe the exit if it's imminent.
+    private static boolean isStillAlive(Process process) {
+        if (!process.isAlive()) {
+            return false;
+        }
+        try {
+            return !process.waitFor(50, TimeUnit.MILLISECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return process.isAlive();
+        }
+    }
 
     public static void main(String[] args) throws Exception {
         Scanner scanner = new Scanner(System.in);
@@ -204,7 +225,7 @@ public class Main {
                         marker = " ";
                     }
 
-                    boolean alive = job.process.isAlive();
+                    boolean alive = isStillAlive(job.process);
                     String status = alive ? "Running" : "Done";
                     String paddedStatus = String.format("%-24s", status);
 
