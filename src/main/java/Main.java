@@ -1,4 +1,6 @@
 import java.io.File;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Scanner;
 import java.util.Set;
 
@@ -8,8 +10,6 @@ public class Main {
 
         Set<String> builtins = Set.of("echo", "exit", "type", "pwd", "cd");
 
-        // Track current directory ourselves since Java can't actually
-        // change the JVM's working directory after startup.
         String currentDirectory = System.getProperty("user.dir");
 
         while (true) {
@@ -21,8 +21,13 @@ public class Main {
                 continue;
             }
 
-            String[] parts = input.split(" ");
-            String command = parts[0];
+            List<String> parts = parseInput(input);
+
+            if (parts.isEmpty()) {
+                continue;
+            }
+
+            String command = parts.get(0);
 
             // exit builtin
             if (command.equals("exit")) {
@@ -31,11 +36,12 @@ public class Main {
 
             // echo builtin
             if (command.equals("echo")) {
-                if (input.length() > 5) {
-                    System.out.println(input.substring(5));
-                } else {
-                    System.out.println();
+                StringBuilder sb = new StringBuilder();
+                for (int i = 1; i < parts.size(); i++) {
+                    if (i > 1) sb.append(" ");
+                    sb.append(parts.get(i));
                 }
+                System.out.println(sb.toString());
                 continue;
             }
 
@@ -47,27 +53,23 @@ public class Main {
 
             // cd builtin
             if (command.equals("cd")) {
-                if (parts.length < 2) {
+                if (parts.size() < 2) {
                     continue;
                 }
 
-                String targetPath = parts[1];
+                String targetPath = parts.get(1);
 
-                // Expand ~ to HOME directory
                 if (targetPath.equals("~")) {
                     targetPath = System.getenv("HOME");
                 }
 
                 File targetDir;
                 if (targetPath.startsWith("/")) {
-                    // Absolute path
                     targetDir = new File(targetPath);
                 } else {
-                    // Relative path - resolve against currentDirectory, not JVM's cwd
                     targetDir = new File(currentDirectory, targetPath);
                 }
 
-                // Collapse "..", "." etc into a clean absolute path
                 targetDir = targetDir.getCanonicalFile();
 
                 if (targetDir.isDirectory()) {
@@ -80,11 +82,11 @@ public class Main {
 
             // type builtin
             if (command.equals("type")) {
-                if (parts.length < 2) {
+                if (parts.size() < 2) {
                     continue;
                 }
 
-                String cmdToCheck = parts[1];
+                String cmdToCheck = parts.get(1);
 
                 if (builtins.contains(cmdToCheck)) {
                     System.out.println(cmdToCheck + " is a shell builtin");
@@ -112,6 +114,47 @@ public class Main {
         }
     }
 
+    // Parses a raw input line into a list of arguments, honoring single quotes.
+    private static List<String> parseInput(String input) {
+        List<String> result = new ArrayList<>();
+        StringBuilder current = new StringBuilder();
+        boolean inSingleQuotes = false;
+        boolean hasToken = false; // tracks whether we've started building a token (handles '' empty case)
+
+        for (int i = 0; i < input.length(); i++) {
+            char c = input.charAt(i);
+
+            if (inSingleQuotes) {
+                if (c == '\'') {
+                    inSingleQuotes = false;
+                } else {
+                    current.append(c);
+                }
+            } else {
+                if (c == '\'') {
+                    inSingleQuotes = true;
+                    hasToken = true; // even '' counts as starting a token
+                } else if (c == ' ' || c == '\t') {
+                    if (hasToken) {
+                        result.add(current.toString());
+                        current.setLength(0);
+                        hasToken = false;
+                    }
+                    // else: skip consecutive unquoted whitespace
+                } else {
+                    current.append(c);
+                    hasToken = true;
+                }
+            }
+        }
+
+        if (hasToken) {
+            result.add(current.toString());
+        }
+
+        return result;
+    }
+
     // Searches PATH for the given command, returns the File if found & executable
     private static File findExecutable(String cmdToCheck) {
         String pathEnv = System.getenv("PATH");
@@ -134,7 +177,7 @@ public class Main {
     }
 
     // Runs the external program, passing through stdin/stdout/stderr
-    private static void runExternalProgram(String[] parts, String currentDirectory) {
+    private static void runExternalProgram(List<String> parts, String currentDirectory) {
         try {
             ProcessBuilder pb = new ProcessBuilder(parts);
             pb.directory(new File(currentDirectory));
@@ -142,7 +185,7 @@ public class Main {
             Process process = pb.start();
             process.waitFor();
         } catch (Exception e) {
-            System.out.println(parts[0] + ": command not found");
+            System.out.println(parts.get(0) + ": command not found");
         }
     }
 }
