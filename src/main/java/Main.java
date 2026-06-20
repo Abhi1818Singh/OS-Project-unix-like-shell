@@ -3,7 +3,7 @@ import java.util.Set;
 
 public class Main {
     public static void main(String[] args) throws Exception {
-        Scanner scanner = new Scanner(System.in);
+         Scanner scanner = new Scanner(System.in);
 
         Set<String> builtins = Set.of("echo", "exit", "type");
 
@@ -12,25 +12,46 @@ public class Main {
 
             String input = scanner.nextLine();
 
-            if (input.equals("exit 0")) {
-                System.exit(0);
-            }
-
-            String[] parts = input.split(" ");
-
-            if (parts[0].equals("type")) {
-                String command = parts[1];
-
-                if (builtins.contains(command)) {
-                    System.out.println(command + " is a shell builtin");
-                } else {
-                    System.out.println(command + ": not found");
-                }
-
+            if (input.isEmpty()) {
                 continue;
             }
 
-            System.out.println(parts[0] + ": command not found");
+            String[] parts = input.split(" ");
+            String command = parts[0];
+
+            // exit builtin
+            if (command.equals("exit")
+                    && parts.length > 1
+                    && parts[1].equals("0")) {
+                System.exit(0);
+            }
+
+            // echo builtin
+            if (command.equals("echo")) {
+                if (input.length() > 5) {
+                    System.out.println(input.substring(5));
+                } else {
+                    System.out.println();
+                }
+                continue;
+            }
+
+            // type builtin
+            if (command.equals("type")) {
+                if (parts.length > 1) {
+                    String cmdToCheck = parts[1];
+
+                    if (builtins.contains(cmdToCheck)) {
+                        System.out.println(cmdToCheck + " is a shell builtin");
+                    } else {
+                        System.out.println(cmdToCheck + ": not found");
+                    }
+                }
+                continue;
+            }
+
+            // unknown command
+            System.out.println(command + ": command not found");
         }
     }
 }
