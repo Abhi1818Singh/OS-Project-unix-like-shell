@@ -34,6 +34,7 @@ public class Main {
         String currentDirectory = System.getProperty("user.dir");
 
         while (true) {
+            reapJobs();
             System.out.print("$ ");
 
             String input = scanner.nextLine();
@@ -440,4 +441,39 @@ public class Main {
 
         return pb;
     }
+    // Checks all background jobs, prints a "Done" line for any that exited,
+// and removes them from the job table. Used both by automatic
+// pre-prompt reaping and by the `jobs` builtin.
+private static void reapJobs() {
+    int size = backgroundJobs.size();
+    List<Job> toRemove = new ArrayList<>();
+
+    for (int i = 0; i < size; i++) {
+        Job job = backgroundJobs.get(i);
+
+        if (!job.process.isAlive()) {
+            String marker;
+            if (i == size - 1) {
+                marker = "+";
+            } else if (i == size - 2) {
+                marker = "-";
+            } else {
+                marker = " ";
+            }
+
+            String paddedStatus = String.format("%-24s", "Done");
+
+            String displayCommand = job.commandLine.trim();
+            if (displayCommand.endsWith("&")) {
+                displayCommand = displayCommand.substring(0, displayCommand.length() - 1).trim();
+            }
+
+            System.out.println("[" + job.jobNumber + "]" + marker + "  " + paddedStatus + displayCommand);
+
+            toRemove.add(job);
+        }
+    }
+
+    backgroundJobs.removeAll(toRemove);
+}
 }
