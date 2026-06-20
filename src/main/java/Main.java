@@ -7,6 +7,25 @@ import java.util.Scanner;
 import java.util.Set;
 
 public class Main {
+
+    // Tracks a background job for later use by the `jobs` builtin
+    static class Job {
+        int jobNumber;
+        long pid;
+        String commandLine;
+        Process process;
+
+        Job(int jobNumber, long pid, String commandLine, Process process) {
+            this.jobNumber = jobNumber;
+            this.pid = pid;
+            this.commandLine = commandLine;
+            this.process = process;
+        }
+    }
+
+    static List<Job> backgroundJobs = new ArrayList<>();
+    static int nextJobNumber = 1;
+
     public static void main(String[] args) throws Exception {
         Scanner scanner = new Scanner(System.in);
 
@@ -24,6 +43,17 @@ public class Main {
             }
 
             List<String> parts = parseInput(input);
+
+            if (parts.isEmpty()) {
+                continue;
+            }
+
+            // Check for trailing & (background execution)
+            boolean runInBackground = false;
+            if (parts.get(parts.size() - 1).equals("&")) {
+                runInBackground = true;
+                parts = new ArrayList<>(parts.subList(0, parts.size() - 1));
+            }
 
             if (parts.isEmpty()) {
                 continue;
@@ -59,28 +89,28 @@ public class Main {
                         i++;
                     }
                 } else if (isStdoutFdTrunc) {
-                    i++; // skip ">"
+                    i++;
                     if (i + 1 < parts.size()) {
                         stdoutRedirectFile = parts.get(i + 1);
                         stdoutAppend = false;
                         i++;
                     }
                 } else if (isStdoutFdAppend) {
-                    i++; // skip ">>"
+                    i++;
                     if (i + 1 < parts.size()) {
                         stdoutRedirectFile = parts.get(i + 1);
                         stdoutAppend = true;
                         i++;
                     }
                 } else if (isStderrFdTrunc) {
-                    i++; // skip ">"
+                    i++;
                     if (i + 1 < parts.size()) {
                         stderrRedirectFile = parts.get(i + 1);
                         stderrAppend = false;
                         i++;
                     }
                 } else if (isStderrFdAppend) {
-                    i++; // skip ">>"
+                    i++;
                     if (i + 1 < parts.size()) {
                         stderrRedirectFile = parts.get(i + 1);
                         stderrAppend = true;
@@ -113,8 +143,6 @@ public class Main {
                     sb.append(parts.get(i));
                 }
 
-                // Even though echo never writes to stderr, a 2> / 2>> redirect must
-                // still create the target file (matches real shell behavior).
                 if (stderrRedirectFile != null) {
                     try {
                         new FileOutputStream(stderrRedirectFile, stderrAppend).close();
@@ -141,7 +169,7 @@ public class Main {
                 continue;
             }
 
-            // jobs builtin (empty implementation for now)
+            // jobs builtin
             if (command.equals("jobs")) {
                 continue;
             }
@@ -200,8 +228,13 @@ public class Main {
             // Try to run as external program
             File executable = findExecutable(command);
             if (executable != null) {
-                runExternalProgram(parts, currentDirectory,
-                        stdoutRedirectFile, stdoutAppend, stderrRedirectFile, stderrAppend);
+                if (runInBackground) {
+                    runExternalProgramBackground(parts, currentDirectory,
+                            stdoutRedirectFile, stdoutAppend, stderrRedirectFile, stderrAppend, input);
+                } else {
+                    runExternalProgram(parts, currentDirectory,
+                            stdoutRedirectFile, stdoutAppend, stderrRedirectFile, stderrAppend);
+                }
                 continue;
             }
 
@@ -259,10 +292,17 @@ public class Main {
                     }
                     if (i + 1 < input.length() && input.charAt(i + 1) == '>') {
                         result.add(">>");
-                        i++; // consume the second '>'
+                        i++;
                     } else {
                         result.add(">");
                     }
+                } else if (c == '&') {
+                    if (hasToken) {
+                        result.add(current.toString());
+                        current.setLength(0);
+                        hasToken = false;
+                    }
+                    result.add("&");
                 } else if (c == ' ' || c == '\t') {
                     if (hasToken) {
                         result.add(current.toString());
@@ -283,13 +323,10 @@ public class Main {
         return result;
     }
 
-    // Inside double quotes, backslash only has special meaning before these
-    // characters.
     private static boolean isEscapableInDoubleQuotes(char c) {
         return c == '"' || c == '\\' || c == '$' || c == '`' || c == '\n';
     }
 
-    // Searches PATH for the given command, returns the File if found & executable
     private static File findExecutable(String cmdToCheck) {
         String pathEnv = System.getenv("PATH");
 
@@ -310,36 +347,63 @@ public class Main {
         return null;
     }
 
-    // Runs the external program, passing through stdin/stdout/stderr
+    // Runs the external program in the foreground, waiting for completion.
     private static void runExternalProgram(List<String> parts, String currentDirectory,
             String stdoutRedirectFile, boolean stdoutAppend,
             String stderrRedirectFile, boolean stderrAppend) {
         try {
-            ProcessBuilder pb = new ProcessBuilder(parts);
-            pb.directory(new File(currentDirectory));
-
-            if (stdoutRedirectFile != null) {
-                pb.redirectOutput(stdoutAppend
-                        ? ProcessBuilder.Redirect.appendTo(new File(stdoutRedirectFile))
-                        : ProcessBuilder.Redirect.to(new File(stdoutRedirectFile)));
-            } else {
-                pb.redirectOutput(ProcessBuilder.Redirect.INHERIT);
-            }
-
-            if (stderrRedirectFile != null) {
-                pb.redirectError(stderrAppend
-                        ? ProcessBuilder.Redirect.appendTo(new File(stderrRedirectFile))
-                        : ProcessBuilder.Redirect.to(new File(stderrRedirectFile)));
-            } else {
-                pb.redirectError(ProcessBuilder.Redirect.INHERIT);
-            }
-
-            pb.redirectInput(ProcessBuilder.Redirect.INHERIT);
-
+            ProcessBuilder pb = buildProcessBuilder(parts, currentDirectory,
+                    stdoutRedirectFile, stdoutAppend, stderrRedirectFile, stderrAppend);
             Process process = pb.start();
             process.waitFor();
         } catch (Exception e) {
             System.out.println(parts.get(0) + ": command not found");
         }
+    }
+
+    // Runs the external program in the background, without waiting.
+    private static void runExternalProgramBackground(List<String> parts, String currentDirectory,
+            String stdoutRedirectFile, boolean stdoutAppend,
+            String stderrRedirectFile, boolean stderrAppend, String commandLine) {
+        try {
+            ProcessBuilder pb = buildProcessBuilder(parts, currentDirectory,
+                    stdoutRedirectFile, stdoutAppend, stderrRedirectFile, stderrAppend);
+            Process process = pb.start();
+
+            int jobNumber = nextJobNumber++;
+            long pid = process.pid();
+            backgroundJobs.add(new Job(jobNumber, pid, commandLine, process));
+
+            System.out.println("[" + jobNumber + "] " + pid);
+        } catch (Exception e) {
+            System.out.println(parts.get(0) + ": command not found");
+        }
+    }
+
+    private static ProcessBuilder buildProcessBuilder(List<String> parts, String currentDirectory,
+            String stdoutRedirectFile, boolean stdoutAppend,
+            String stderrRedirectFile, boolean stderrAppend) {
+        ProcessBuilder pb = new ProcessBuilder(parts);
+        pb.directory(new File(currentDirectory));
+
+        if (stdoutRedirectFile != null) {
+            pb.redirectOutput(stdoutAppend
+                    ? ProcessBuilder.Redirect.appendTo(new File(stdoutRedirectFile))
+                    : ProcessBuilder.Redirect.to(new File(stdoutRedirectFile)));
+        } else {
+            pb.redirectOutput(ProcessBuilder.Redirect.INHERIT);
+        }
+
+        if (stderrRedirectFile != null) {
+            pb.redirectError(stderrAppend
+                    ? ProcessBuilder.Redirect.appendTo(new File(stderrRedirectFile))
+                    : ProcessBuilder.Redirect.to(new File(stderrRedirectFile)));
+        } else {
+            pb.redirectError(ProcessBuilder.Redirect.INHERIT);
+        }
+
+        pb.redirectInput(ProcessBuilder.Redirect.INHERIT);
+
+        return pb;
     }
 }
