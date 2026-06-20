@@ -171,6 +171,13 @@ public class Main {
 
             // jobs builtin
             if (command.equals("jobs")) {
+                for (Job job : backgroundJobs) {
+                    String marker = (job == backgroundJobs.get(backgroundJobs.size() - 1)) ? "+" : "-";
+                    String status = "Running";
+                    String paddedStatus = String.format("%-24s", status);
+
+                    System.out.println("[" + job.jobNumber + "]" + marker + "  " + paddedStatus + job.commandLine);
+                }
                 continue;
             }
 
