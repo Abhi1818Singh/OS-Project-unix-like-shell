@@ -85,6 +85,16 @@ public class Main {
                     sb.append(parts.get(i));
                 }
 
+                // Even though echo never writes to stderr, a 2> redirect must still
+                // create/truncate the target file (matches real shell behavior).
+                if (stderrRedirectFile != null) {
+                    try {
+                        new FileOutputStream(stderrRedirectFile).close();
+                    } catch (Exception e) {
+                        System.out.println("echo: " + stderrRedirectFile + ": No such file or directory");
+                    }
+                }
+
                 if (stdoutRedirectFile != null) {
                     try (PrintStream out = new PrintStream(new FileOutputStream(stdoutRedirectFile))) {
                         out.println(sb.toString());
