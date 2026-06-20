@@ -38,7 +38,8 @@ public class Main {
             if (command.equals("echo")) {
                 StringBuilder sb = new StringBuilder();
                 for (int i = 1; i < parts.size(); i++) {
-                    if (i > 1) sb.append(" ");
+                    if (i > 1)
+                        sb.append(" ");
                     sb.append(parts.get(i));
                 }
                 System.out.println(sb.toString());
@@ -114,12 +115,14 @@ public class Main {
         }
     }
 
-    // Parses a raw input line into a list of arguments, honoring single quotes.
+    // Parses a raw input line into a list of arguments, honoring single and double
+    // quotes.
     private static List<String> parseInput(String input) {
         List<String> result = new ArrayList<>();
         StringBuilder current = new StringBuilder();
         boolean inSingleQuotes = false;
-        boolean hasToken = false; // tracks whether we've started building a token (handles '' empty case)
+        boolean inDoubleQuotes = false;
+        boolean hasToken = false; // tracks whether we've started building a token (handles '' or "" empty case)
 
         for (int i = 0; i < input.length(); i++) {
             char c = input.charAt(i);
@@ -130,17 +133,25 @@ public class Main {
                 } else {
                     current.append(c);
                 }
+            } else if (inDoubleQuotes) {
+                if (c == '"') {
+                    inDoubleQuotes = false;
+                } else {
+                    current.append(c);
+                }
             } else {
                 if (c == '\'') {
                     inSingleQuotes = true;
-                    hasToken = true; // even '' counts as starting a token
+                    hasToken = true;
+                } else if (c == '"') {
+                    inDoubleQuotes = true;
+                    hasToken = true;
                 } else if (c == ' ' || c == '\t') {
                     if (hasToken) {
                         result.add(current.toString());
                         current.setLength(0);
                         hasToken = false;
                     }
-                    // else: skip consecutive unquoted whitespace
                 } else {
                     current.append(c);
                     hasToken = true;
