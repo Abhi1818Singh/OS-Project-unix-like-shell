@@ -29,25 +29,33 @@ public class Main {
                 continue;
             }
 
-            // Extract output redirection (> or 1>) before dispatching the command
+            // Extract output/error redirection (>, 1>, 2>) before dispatching the command
             String stdoutRedirectFile = null;
+            String stderrRedirectFile = null;
             List<String> cleanParts = new ArrayList<>();
 
             for (int i = 0; i < parts.size(); i++) {
                 String token = parts.get(i);
 
-                boolean isRedirect = token.equals(">");
-                boolean isFdRedirect = token.equals("1") && i + 1 < parts.size() && parts.get(i + 1).equals(">");
+                boolean isStdoutRedirect = token.equals(">");
+                boolean isStdoutFdRedirect = token.equals("1") && i + 1 < parts.size() && parts.get(i + 1).equals(">");
+                boolean isStderrFdRedirect = token.equals("2") && i + 1 < parts.size() && parts.get(i + 1).equals(">");
 
-                if (isRedirect) {
+                if (isStdoutRedirect) {
                     if (i + 1 < parts.size()) {
                         stdoutRedirectFile = parts.get(i + 1);
                         i++;
                     }
-                } else if (isFdRedirect) {
+                } else if (isStdoutFdRedirect) {
                     i++; // skip the ">"
                     if (i + 1 < parts.size()) {
                         stdoutRedirectFile = parts.get(i + 1);
+                        i++;
+                    }
+                } else if (isStderrFdRedirect) {
+                    i++; // skip the ">"
+                    if (i + 1 < parts.size()) {
+                        stderrRedirectFile = parts.get(i + 1);
                         i++;
                     }
                 } else {
@@ -149,7 +157,7 @@ public class Main {
             // Try to run as external program
             File executable = findExecutable(command);
             if (executable != null) {
-                runExternalProgram(parts, currentDirectory, stdoutRedirectFile);
+                runExternalProgram(parts, currentDirectory, stdoutRedirectFile, stderrRedirectFile);
                 continue;
             }
 
@@ -254,18 +262,25 @@ public class Main {
     }
 
     // Runs the external program, passing through stdin/stdout/stderr
-    private static void runExternalProgram(List<String> parts, String currentDirectory, String stdoutRedirectFile) {
+    private static void runExternalProgram(List<String> parts, String currentDirectory,
+            String stdoutRedirectFile, String stderrRedirectFile) {
         try {
             ProcessBuilder pb = new ProcessBuilder(parts);
             pb.directory(new File(currentDirectory));
 
             if (stdoutRedirectFile != null) {
                 pb.redirectOutput(new File(stdoutRedirectFile));
-                pb.redirectError(ProcessBuilder.Redirect.INHERIT);
-                pb.redirectInput(ProcessBuilder.Redirect.INHERIT);
             } else {
-                pb.inheritIO();
+                pb.redirectOutput(ProcessBuilder.Redirect.INHERIT);
             }
+
+            if (stderrRedirectFile != null) {
+                pb.redirectError(new File(stderrRedirectFile));
+            } else {
+                pb.redirectError(ProcessBuilder.Redirect.INHERIT);
+            }
+
+            pb.redirectInput(ProcessBuilder.Redirect.INHERIT);
 
             Process process = pb.start();
             process.waitFor();
