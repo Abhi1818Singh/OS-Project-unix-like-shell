@@ -3,7 +3,7 @@ import java.util.Set;
 
 public class Main {
     public static void main(String[] args) throws Exception {
-         Scanner scanner = new Scanner(System.in);
+        Scanner scanner = new Scanner(System.in);
 
         Set<String> builtins = Set.of("echo", "exit", "type");
 
@@ -12,7 +12,7 @@ public class Main {
 
             String input = scanner.nextLine();
 
-            if (input.isEmpty()) {
+            if (input.trim().isEmpty()) {
                 continue;
             }
 
@@ -20,9 +20,7 @@ public class Main {
             String command = parts[0];
 
             // exit builtin
-            if (command.equals("exit")
-                    && parts.length > 1
-                    && parts[1].equals("0")) {
+            if (command.equals("exit")) {
                 System.exit(0);
             }
 
