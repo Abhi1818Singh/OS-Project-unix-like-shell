@@ -172,6 +172,8 @@ public class Main {
             // jobs builtin
             if (command.equals("jobs")) {
                 int size = backgroundJobs.size();
+                List<Job> toRemove = new ArrayList<>();
+
                 for (int i = 0; i < size; i++) {
                     Job job = backgroundJobs.get(i);
 
@@ -184,11 +186,25 @@ public class Main {
                         marker = " ";
                     }
 
-                    String status = "Running";
+                    boolean isDone = !job.process.isAlive();
+                    String status = isDone ? "Done" : "Running";
                     String paddedStatus = String.format("%-24s", status);
 
-                    System.out.println("[" + job.jobNumber + "]" + marker + "  " + paddedStatus + job.commandLine);
+                    // "Done" jobs print without the trailing "&"; "Running" jobs keep it.
+                    String displayCommand = job.commandLine;
+                    if (isDone && displayCommand.trim().endsWith("&")) {
+                        displayCommand = displayCommand.trim();
+                        displayCommand = displayCommand.substring(0, displayCommand.length() - 1).trim();
+                    }
+
+                    System.out.println("[" + job.jobNumber + "]" + marker + "  " + paddedStatus + displayCommand);
+
+                    if (isDone) {
+                        toRemove.add(job);
+                    }
                 }
+
+                backgroundJobs.removeAll(toRemove);
                 continue;
             }
 
