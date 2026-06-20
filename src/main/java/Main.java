@@ -53,10 +53,19 @@ public class Main {
 
                 String targetPath = parts[1];
 
-                // This stage: only handle absolute paths
-                File targetDir = new File(targetPath);
+                File targetDir;
+                if (targetPath.startsWith("/")) {
+                    // Absolute path
+                    targetDir = new File(targetPath);
+                } else {
+                    // Relative path - resolve against currentDirectory, not JVM's cwd
+                    targetDir = new File(currentDirectory, targetPath);
+                }
 
-                if (targetDir.isAbsolute() && targetDir.isDirectory()) {
+                // Collapse "..", "." etc into a clean absolute path
+                targetDir = targetDir.getCanonicalFile();
+
+                if (targetDir.isDirectory()) {
                     currentDirectory = targetDir.getAbsolutePath();
                 } else {
                     System.out.println("cd: " + targetPath + ": No such file or directory");
