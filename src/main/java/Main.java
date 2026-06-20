@@ -189,9 +189,9 @@ public class Main {
 
             // jobs builtin
             if (command.equals("jobs")) {
-                reapJobs();
-
                 int size = backgroundJobs.size();
+                List<Job> toRemove = new ArrayList<>();
+
                 for (int i = 0; i < size; i++) {
                     Job job = backgroundJobs.get(i);
 
@@ -204,10 +204,23 @@ public class Main {
                         marker = " ";
                     }
 
-                    String paddedStatus = String.format("%-24s", "Running");
+                    boolean alive = job.process.isAlive();
+                    String status = alive ? "Running" : "Done";
+                    String paddedStatus = String.format("%-24s", status);
 
-                    System.out.println("[" + job.jobNumber + "]" + marker + "  " + paddedStatus + job.commandLine);
+                    String displayCommand = job.commandLine;
+                    if (!alive) {
+                        displayCommand = displayCommand.trim();
+                        if (displayCommand.endsWith("&")) {
+                            displayCommand = displayCommand.substring(0, displayCommand.length() - 1).trim();
+                        }
+                        toRemove.add(job);
+                    }
+
+                    System.out.println("[" + job.jobNumber + "]" + marker + "  " + paddedStatus + displayCommand);
                 }
+
+                backgroundJobs.removeAll(toRemove);
                 continue;
             }
 
@@ -482,7 +495,10 @@ public class Main {
         try {
             List<ProcessBuilder> builders = new ArrayList<>();
 
-            for (List<String> segment : segments) {
+            for (int s = 0; s < segments.size(); s++) {
+                List<String> segment = segments.get(s);
+                boolean isLastSegment = (s == segments.size() - 1);
+
                 // Extract this segment's own redirection
                 String stdoutRedirectFile = null;
                 String stderrRedirectFile = null;
@@ -553,8 +569,39 @@ public class Main {
                     continue;
                 }
 
-                ProcessBuilder pb = buildProcessBuilder(cleanSegment, currentDirectory,
-                        stdoutRedirectFile, stdoutAppend, stderrRedirectFile, stderrAppend);
+                ProcessBuilder pb = new ProcessBuilder(cleanSegment);
+                pb.directory(new File(currentDirectory));
+
+                // Only the LAST segment's stdout may be customized (file or
+                // inherited terminal). Every other segment's stdout must stay
+                // as the default PIPE so startPipeline can wire it to the
+                // next process's stdin.
+                if (isLastSegment) {
+                    if (stdoutRedirectFile != null) {
+                        pb.redirectOutput(stdoutAppend
+                                ? ProcessBuilder.Redirect.appendTo(new File(stdoutRedirectFile))
+                                : ProcessBuilder.Redirect.to(new File(stdoutRedirectFile)));
+                    } else {
+                        pb.redirectOutput(ProcessBuilder.Redirect.INHERIT);
+                    }
+                }
+                // else: leave stdout untouched (default PIPE)
+
+                // stderr has no such restriction - every stage can redirect it independently.
+                if (stderrRedirectFile != null) {
+                    pb.redirectError(stderrAppend
+                            ? ProcessBuilder.Redirect.appendTo(new File(stderrRedirectFile))
+                            : ProcessBuilder.Redirect.to(new File(stderrRedirectFile)));
+                } else {
+                    pb.redirectError(ProcessBuilder.Redirect.INHERIT);
+                }
+
+                // Only the FIRST segment's stdin may be customized; the rest
+                // get wired to the previous process's stdout by startPipeline.
+                if (s == 0) {
+                    pb.redirectInput(ProcessBuilder.Redirect.INHERIT);
+                }
+
                 builders.add(pb);
             }
 
@@ -570,7 +617,7 @@ public class Main {
                 }
             }
         } catch (Exception e) {
-            System.out.println("pipeline: error executing command");
+            System.out.println("pipeline: error executing command: " + e.getMessage());
         }
     }
 
