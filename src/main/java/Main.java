@@ -24,7 +24,19 @@ public class Main {
     }
 
     static List<Job> backgroundJobs = new ArrayList<>();
-    static int nextJobNumber = 1;
+
+    // Computes the next job number: one more than the highest current job
+    // number, or 1 if the table is empty. Numbers are recycled, not just
+    // incremented forever.
+    private static int computeNextJobNumber() {
+        int maxJobNumber = 0;
+        for (Job job : backgroundJobs) {
+            if (job.jobNumber > maxJobNumber) {
+                maxJobNumber = job.jobNumber;
+            }
+        }
+        return maxJobNumber + 1;
+    }
 
     public static void main(String[] args) throws Exception {
         Scanner scanner = new Scanner(System.in);
@@ -396,7 +408,6 @@ public class Main {
         }
     }
 
-    // Runs the external program in the background, without waiting.
     private static void runExternalProgramBackground(List<String> parts, String currentDirectory,
             String stdoutRedirectFile, boolean stdoutAppend,
             String stderrRedirectFile, boolean stderrAppend, String commandLine) {
@@ -405,7 +416,7 @@ public class Main {
                     stdoutRedirectFile, stdoutAppend, stderrRedirectFile, stderrAppend);
             Process process = pb.start();
 
-            int jobNumber = nextJobNumber++;
+            int jobNumber = computeNextJobNumber();
             long pid = process.pid();
             backgroundJobs.add(new Job(jobNumber, pid, commandLine, process));
 
@@ -441,39 +452,40 @@ public class Main {
 
         return pb;
     }
+
     // Checks all background jobs, prints a "Done" line for any that exited,
-// and removes them from the job table. Used both by automatic
-// pre-prompt reaping and by the `jobs` builtin.
-private static void reapJobs() {
-    int size = backgroundJobs.size();
-    List<Job> toRemove = new ArrayList<>();
+    // and removes them from the job table. Used both by automatic
+    // pre-prompt reaping and by the `jobs` builtin.
+    private static void reapJobs() {
+        int size = backgroundJobs.size();
+        List<Job> toRemove = new ArrayList<>();
 
-    for (int i = 0; i < size; i++) {
-        Job job = backgroundJobs.get(i);
+        for (int i = 0; i < size; i++) {
+            Job job = backgroundJobs.get(i);
 
-        if (!job.process.isAlive()) {
-            String marker;
-            if (i == size - 1) {
-                marker = "+";
-            } else if (i == size - 2) {
-                marker = "-";
-            } else {
-                marker = " ";
+            if (!job.process.isAlive()) {
+                String marker;
+                if (i == size - 1) {
+                    marker = "+";
+                } else if (i == size - 2) {
+                    marker = "-";
+                } else {
+                    marker = " ";
+                }
+
+                String paddedStatus = String.format("%-24s", "Done");
+
+                String displayCommand = job.commandLine.trim();
+                if (displayCommand.endsWith("&")) {
+                    displayCommand = displayCommand.substring(0, displayCommand.length() - 1).trim();
+                }
+
+                System.out.println("[" + job.jobNumber + "]" + marker + "  " + paddedStatus + displayCommand);
+
+                toRemove.add(job);
             }
-
-            String paddedStatus = String.format("%-24s", "Done");
-
-            String displayCommand = job.commandLine.trim();
-            if (displayCommand.endsWith("&")) {
-                displayCommand = displayCommand.substring(0, displayCommand.length() - 1).trim();
-            }
-
-            System.out.println("[" + job.jobNumber + "]" + marker + "  " + paddedStatus + displayCommand);
-
-            toRemove.add(job);
         }
-    }
 
-    backgroundJobs.removeAll(toRemove);
-}
+        backgroundJobs.removeAll(toRemove);
+    }
 }
